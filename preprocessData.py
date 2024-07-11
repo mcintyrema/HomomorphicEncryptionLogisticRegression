@@ -45,7 +45,7 @@ def preprocess_data():
     #getting other 10%
     x_test_index = np.setdiff1d(np.arange(feature_matrix_X.shape[0]), x_train_index)
     x_test = feature_matrix_X[x_test_index]
-
+    
     return [x_train, y_train, x_test, y_test]
     
         
