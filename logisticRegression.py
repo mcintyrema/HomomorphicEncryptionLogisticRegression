@@ -14,21 +14,19 @@ def sigmoid(z):
 
 
 def costFunction(theta, X_train, y_train):
-    theta = np.array(theta)
-    #make sure one column vector
-    theta = theta.reshape(-1, 1)
-
-    m = len(X_train)
+    m = len(X_train) # number of training samples
     # calculate z
     z = np.dot(X_train, theta)
+    z = X_train @ theta
+    # calculate the hypothesis H0(x), predicted probability y = 1 (diabetic)
     h = sigmoid(z)
 
     #compute summation
     y_train = y_train.reshape(-1, 1)
     #prevent error from taking log(0)
-    nozero = 1e-10
+    epsilon = 1e-10
     #remove almost zero values from h
-    h = np.clip(h, nozero, 1 - nozero)
+    h = np.clip(h, epsilon, 1 - epsilon)
     sum1 = -y_train*np.log(h) - (1-y_train)*np.log(1-h)
 
     product1 = (1/m)*sum1
@@ -37,12 +35,10 @@ def costFunction(theta, X_train, y_train):
 
 
 def main():
-    X = prep.preprocess_data()[0]
+    X = prep.preprocess_data()[0] #(13500, 10)
     y = prep.preprocess_data()[1]
-    theta = [[2],
-             [0],  
-             [0]]
-    #TODO: Get theta values of correct dimension
+    theta = np.zeros(X.shape[1]) #(10,)
+    print(theta[0], X[0])
     print("Cost = ", costFunction(theta, X, y))
 
 main()
