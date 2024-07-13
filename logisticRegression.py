@@ -1,11 +1,6 @@
 import numpy as np
-import pandas as pd
-import scipy.optimize
 import matplotlib.pyplot as plt
-import statistics as stat
-import math
 import preprocessData as prep
-from sklearn.decomposition import PCA
 
 
 def sigmoid(z):
