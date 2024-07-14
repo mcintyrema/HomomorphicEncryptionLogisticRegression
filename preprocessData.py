@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 
 def preprocess_data():
     patient_data = pd.read_csv("patient_data.csv", header=None) #[15001 x 10]
@@ -16,10 +15,7 @@ def preprocess_data():
     # combine ones vector with score vectors to make feature matrix
     X = np.hstack((oneVector, X)) #(15000, 10)
 
-    # Standardize features (Z-score normalization)
-    # scaler = StandardScaler()
-    # X[:, 1:] = scaler.fit_transform(X[:, 1:])  # Exclude intercept for normalization
-    # Min-Max Normalization
+    # min-max Normalization
     X[:, 1:] = (X[:, 1:] - np.min(X[:, 1:], axis=0)) / (np.max(X[:, 1:], axis=0) - np.min(X[:, 1:], axis=0))
 
 

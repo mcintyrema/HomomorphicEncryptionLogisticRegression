@@ -23,7 +23,9 @@ def costFunction(theta, b, X_train, y_train):
     epsilon = 1e-10
     #remove almost zero and 1 values from h
     h = np.clip(h, epsilon, 1 - epsilon)
-    sum1 = -y_train*np.log(h) - (1-y_train)*np.log(1-h)
+    print(y_train.shape, h.shape)
+    sum0 = -y_train*np.log(h)
+    sum1 = sum0 - (1-y_train)*np.log(1-h)
     # product1 = (1/m)*sum1
     cost = (np.sum(sum1)) * (1/m)
 
@@ -76,29 +78,31 @@ def initialize_weights_and_bias(dimension):
     b= 0.0
     return theta,b
 
+def logistic_regression_encrypted(X_train, y_train):
+    alpha = .001
+    iterations = 4500
+    theta, b, costs = grad_descent(X_train, y_train, alpha, iterations)
+
 
 def main():
+    #plaintext training
     X = prep.preprocess_data()[0] #(13500, 10), x_train
     y = prep.preprocess_data()[1] #13500, y_train
     X_test = prep.preprocess_data()[2]
     y_test = prep.preprocess_data()[3]
-    theta = np.random.rand(X.shape[1]) #(10,)
     
     alpha = .001
     iterations = 4500
     theta, b, costs = grad_descent(X, y, alpha, iterations)
-    
 
-    #get predictions
+    #get plaintext predictions
     z = np.dot(X_test, theta)+b
     h = sigmoid(z)
     predicted_y = np.zeros((1, X_test.shape[1]))
     predicted_y = (h >= 0.5).astype(int)
-    #get accuracy
+    #get plaintext accuracy
     accuracy = np.mean(y_test == predicted_y)
     error_rate = np.mean(y_test != predicted_y)
 
     print("Accuracy: ", accuracy)
     print("Error rate:", error_rate)
-
-main()
