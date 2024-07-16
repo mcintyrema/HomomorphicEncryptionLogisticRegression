@@ -1,9 +1,9 @@
-import tenseal as ts
-import logisticRegression as lreg
-import numpy as np
 from numpy.polynomial import Chebyshev
+import logisticRegression as lreg
 import matplotlib.pyplot as plt
 import preprocessData as prep
+import tenseal as ts
+import numpy as np
 
 
 class EncryptedLogRegression:
@@ -13,23 +13,27 @@ class EncryptedLogRegression:
         self.y_train = y_train  # encrypted
         self.alpha = alpha
         self.iterations = iterations
-        self.theta, self.b = self.initialize_weights_and_bias(self.context, self.x_train)
+        self.theta, self.b = self.initialize_weights_and_bias()
         self.gradient = ts.ckks_vector(context, [0.0] * len(x_train))
         self.gradient_b = ts.ckks_vector(context, [0.0])
 
-    def initialize_weights_and_bias(self, context, x_train):
+    def initialize_weights_and_bias(self):
         """Initialize encrypted versions of theta and b """
-        dimension = len(x_train)
-        encrypted_theta = ts.ckks_vector(context, [0.0]*dimension)
-        encrypted_b = ts.ckks_vector(context, [0.0])
+        dimension = len(self.x_train[0].decrypt())
+        encrypted_theta = ts.ckks_vector(self.context, [0.0]*dimension)
+        encrypted_b = ts.ckks_vector(self.context, [0.0])
         return encrypted_theta, encrypted_b
 
     def cost(self):
         m = len(self.y_train)
         ####forward propagation###
         # calculate z
-        print(len(self.theta), len(self.b), len(self.x_train))
-        z = [self.x_train[i].dot(self.theta) + self.b for i in range(len(self.x_train))]
+        # Decrypt theta and b for computation
+        theta_plain = self.theta.decrypt()
+        b_plain = self.b.decrypt()
+        z = [np.dot(self.x_train[i].decrypt(), theta_plain) + b_plain for i in range(len(self.x_train))]
+        # z = [self.x_train[i].dot(self.theta) + self.b for i in range(len(self.x_train))]
+
         # calculate the hypothesis H0(x), predicted probability y = 1 (diabetic)
         h = [self.sigmoid(z_i) for z_i in z]
 
@@ -39,18 +43,18 @@ class EncryptedLogRegression:
             h_i = h[i]
             # compute cost
             if y_i == 1:
-                cost += (-y_i * h_i.log())
+                cost += (-y_i * np.log(h_i))
             else:
-                cost += (-(1 - y_i) * (1 - h_i).log())
+                cost += (-(1 - y_i) * np.log(1 - h_i))
         cost = cost/m
 
         ### back propagation ###
-        self.gradient = ts.ckks_vector(self.context, [0.0] * len(self.theta))
+        self.gradient = ts.ckks_vector(self.context, [0.0] * len(self.x_train[0].decrypt()))
         self.gradient_b = ts.ckks_vector(self.context, [0.0])
 
         for i in range(m):
             error = h[i] - self.y_train[i]
-            self.gradient += self.x_train[i] * error
+            self.gradient += ts.ckks_vector(self.context, self.x_train[i].decrypt()) * error
             self.gradient_b += error
         self.gradient /= m
         self.gradient_b /= m
@@ -83,18 +87,16 @@ class EncryptedLogRegression:
         plt.ylabel("Cost")
         plt.show()
 
-    def sigmoid(z):
+    def sigmoid(self, z):
         """ Need a polynomial approximation to use encrypted data.
         Exponential functions can not be directly applied to 
         encrypted data.
         This function will use polynomial approximation by Chebyshev
         use a third order polynomial and [-6, 6] range to capture sigmoid transition from 0 to 1
         """
-        # coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), 0.5 + 0.197 * np.linspace(-6, 6, 1000) - 0.004 * np.linspace(-6, 6, 1000) ** 3, 3).convert().coef
-        coefficients = Chebyshev.fit(
-            np.linspace(-6, 6, 1000), lreg.sigmoid(np.linspace(-6, 6, 1000)), 3).convert().coef
-        h = coefficients[0] + coefficients[1] * z + \
-            coefficients[2] * z**2 + coefficients[3] * z**3
+        coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), 0.5 + 0.197 * np.linspace(-6, 6, 1000) - 0.004 * np.linspace(-6, 6, 1000) ** 3, 3).convert().coef
+        # coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), lreg.sigmoid(np.linspace(-6, 6, 1000)), 3).convert().coef
+        h = coefficients[0] + coefficients[1] * z + coefficients[2] * z**2 + coefficients[3] * z**3
         return h
 
     def get_predictions(self, x_test):
@@ -108,8 +110,7 @@ class EncryptedLogRegression:
         predicted_y = (h >= 0.5).astype(int)
 
         # Encrypt the predictions for privacy-preserving evaluation
-        encrypted_predicted_y = [ts.ckks_vector(
-            self.context, [y]) for y in predicted_y]
+        encrypted_predicted_y = [ts.ckks_vector(self.context, [y]) for y in predicted_y]
         return encrypted_predicted_y
 
     def get_evaluation(self, encrypted_predicted_y, y_test):
@@ -129,42 +130,51 @@ class EncryptedLogRegression:
         return accuracy, error_rate
 
 
-def main():
+# def main():
     # get data
-    ##### MOVE DATA ENcryption to diff file#########
-    data = prep.preprocess_data()
-    x_train = data[0]
-    y_train = data[1]
-    x_test = data[2]
-    y_test = data[3]
+    # data = prep.preprocess_data()
+    # x_train = data[0]
+    # y_train = data[1]
+    # x_test = data[2]
+    # y_test = data[3]
 
-    # CKKS tenseal parameters
-    poly_mod_degree = 32768
-    deg_of_optimization = -1
-    # coeff_mod_bit_sizes = [40, 21, 21, 21, 21, 21, 21, 40]
-    coeff_mod_bit_sizes = [60, 40, 60]
-    # create a tenseal context
-    context = ts.context(ts.SCHEME_TYPE.CKKS, poly_mod_degree,
-                         deg_of_optimization, coeff_mod_bit_sizes)
-    context.global_scale = 2 ** 21
-    context.generate_galois_keys()
+    # # CKKS tenseal parameters
+    # poly_mod_degree = 32768
+    # deg_of_optimization = -1
+    # # coeff_mod_bit_sizes = [40, 21, 21, 21, 21, 21, 21, 40]
+    # coeff_mod_bit_sizes = [60, 40, 60]
+    # # create a tenseal context
+    # context = ts.context(ts.SCHEME_TYPE.CKKS, poly_mod_degree,
+    #                      deg_of_optimization, coeff_mod_bit_sizes)
+    # context.global_scale = 2 ** 21
+    # context.generate_galois_keys()
 
-    # encrypt training data using ckks (need tolist() not numpy so compatible with tenseal)
-    encrypted_x_train = [ts.ckks_vector(context, x.tolist()) for x in x_train]
-    encrypted_y_train = [ts.ckks_vector(context, [y]) for y in y_train.tolist()]
-
-    # #initialize model
-    model = EncryptedLogRegression(context, encrypted_x_train, encrypted_y_train)
-
-    # train model
-    model.grad_descent()
-    print("Model training finished!")
-
-    # #get plaintext predictions
-    y_predicted = model.get_predictions(x_test)
-
-    # #get plaintext accuracy
-    model.get_evaluation(y_predicted, y_test)
+    # # encrypt training data using ckks (need tolist() not numpy so compatible with tenseal)
+    # encrypted_x_train = [ts.ckks_vector(context, x.tolist()) for x in x_train]
+    # encrypted_y_train = [ts.ckks_vector(context, [y]) for y in y_train.tolist()]
 
 
-main()
+    # # Load encrypted data from file
+    # import pickle
+    # with open('encrypted_data.pkl', 'rb') as f:
+    #     encrypted_data = pickle.load(f)
+
+    # x_train_encrypted = encrypted_data['x_train']
+    # y_train_encrypted = encrypted_data['y_train']
+    # x_test_encrypted = encrypted_data['x_test']
+    # y_test_encrypted = encrypted_data['y_test']
+    # # #initialize model
+    # model = EncryptedLogRegression(context, x_train_encrypted, y_train_encrypted)
+
+    # # train model
+    # model.grad_descent()
+    # print("Model training finished!")
+
+    # # #get plaintext predictions
+    # y_predicted = model.get_predictions(x_test)
+
+    # # #get plaintext accuracy
+    # model.get_evaluation(y_predicted, y_test)
+
+
+# main()

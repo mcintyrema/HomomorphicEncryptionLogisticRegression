@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
 def preprocess_data():
     patient_data = pd.read_csv("patient_data.csv", header=None) #[15001 x 10]
@@ -51,5 +51,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

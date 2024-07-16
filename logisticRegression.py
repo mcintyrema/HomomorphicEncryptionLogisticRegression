@@ -1,6 +1,6 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import preprocessData as prep
+import numpy as np
 
 
 class LogisticRegression:
