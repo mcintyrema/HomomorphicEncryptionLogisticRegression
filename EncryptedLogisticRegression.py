@@ -1,91 +1,32 @@
 from numpy.polynomial import Chebyshev
-import logisticRegression as lreg
 import matplotlib.pyplot as plt
-import preprocessData as prep
 import tenseal as ts
 import numpy as np
 
-
 class EncryptedLogRegression:
-    def __init__(self, context, x_train, y_train, alpha=.001, iterations=4500):
+    def __init__(self, context, x_train, y_train, x_test, y_test, alpha=.5, iterations=700):
+        """ Logistic Regression machine learning model for CKKS homomorphic
+        encryption"""
         self.context = context
         self.x_train = x_train  # encrypted
         self.y_train = y_train  # encrypted
+        self.x_test = x_test  # encrypted
+        self.y_test = y_test  # encrypted
+        self.n = len(x_train[0].decrypt()) # features
+        self.m = len(y_train) #samples
         self.alpha = alpha
         self.iterations = iterations
         self.theta, self.b = self.initialize_weights_and_bias()
-        self.gradient = ts.ckks_vector(context, [0.0] * len(x_train))
+        self.gradient = ts.ckks_vector(context, [0.0] * self.n)
         self.gradient_b = ts.ckks_vector(context, [0.0])
+
 
     def initialize_weights_and_bias(self):
         """Initialize encrypted versions of theta and b """
-        dimension = len(self.x_train[0].decrypt())
-        encrypted_theta = ts.ckks_vector(self.context, [0.0]*dimension)
+        encrypted_theta = ts.ckks_vector(self.context, [0.0] * self.n)
         encrypted_b = ts.ckks_vector(self.context, [0.0])
         return encrypted_theta, encrypted_b
 
-    def cost(self):
-        m = len(self.y_train)
-        ####forward propagation###
-        # calculate z
-        # Decrypt theta and b for computation
-        theta_plain = self.theta.decrypt()
-        b_plain = self.b.decrypt()
-        z = [np.dot(self.x_train[i].decrypt(), theta_plain) + b_plain for i in range(len(self.x_train))]
-        # z = [self.x_train[i].dot(self.theta) + self.b for i in range(len(self.x_train))]
-
-        # calculate the hypothesis H0(x), predicted probability y = 1 (diabetic)
-        h = [self.sigmoid(z_i) for z_i in z]
-
-        cost = 0.0
-        for i in range(m):
-            y_i = self.y_train[i]
-            h_i = h[i]
-            # compute cost
-            if y_i == 1:
-                cost += (-y_i * np.log(h_i))
-            else:
-                cost += (-(1 - y_i) * np.log(1 - h_i))
-        cost = cost/m
-
-        ### back propagation ###
-        self.gradient = ts.ckks_vector(self.context, [0.0] * len(self.x_train[0].decrypt()))
-        self.gradient_b = ts.ckks_vector(self.context, [0.0])
-
-        for i in range(m):
-            error = h[i] - self.y_train[i]
-            self.gradient += ts.ckks_vector(self.context, self.x_train[i].decrypt()) * error
-            self.gradient_b += error
-        self.gradient /= m
-        self.gradient_b /= m
-
-        return cost
-
-    def grad_descent(self):
-        costs = []
-        cost_list2 = []
-        index = []
-
-        for i in range(self.iterations):
-            cost = self.cost()
-            costs.append(cost)
-
-            # Update parameters using gradient descent
-            self.theta -= self.alpha * self.gradient
-            self.b -= self.alpha * self.gradient_b
-
-            # Print cost every 100 iterations for monitoring
-            if i % 100 == 0:
-                cost_list2.append(cost.decrypt())
-                index.append(i)
-                print(f"Cost after iteration {i}: {cost.decrypt()}")
-
-        # Plot cost vs iterations
-        plt.plot(index, cost_list2)
-        plt.title("Cost-Iteration Relation")
-        plt.xlabel("Number of iterations")
-        plt.ylabel("Cost")
-        plt.show()
 
     def sigmoid(self, z):
         """ Need a polynomial approximation to use encrypted data.
@@ -94,33 +35,116 @@ class EncryptedLogRegression:
         This function will use polynomial approximation by Chebyshev
         use a third order polynomial and [-6, 6] range to capture sigmoid transition from 0 to 1
         """
-        coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), 0.5 + 0.197 * np.linspace(-6, 6, 1000) - 0.004 * np.linspace(-6, 6, 1000) ** 3, 3).convert().coef
-        # coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), lreg.sigmoid(np.linspace(-6, 6, 1000)), 3).convert().coef
+        coefficients = Chebyshev.fit(np.linspace(-6, 6, 1000), sigmoid(np.linspace(-6, 6, 1000)), 3).convert().coef
         h = coefficients[0] + coefficients[1] * z + coefficients[2] * z**2 + coefficients[3] * z**3
         return h
 
-    def get_predictions(self, x_test):
-        # Decrypt theta and b for evaluation
+    
+    def cost(self):
+        """Compute the cost by using the updated sigmoid function to 
+        compute the hypothesis. Compare hypothesized values with ground
+        truth y values. Compute the gradients to update the weights (theta) 
+        and the bias value (b)"""
+
+        ####forward propagation###
         theta_plain = self.theta.decrypt()
-        b_plain = self.b.decrypt()
+        b_plain = self.b.decrypt()[0]
+        # calculate z
+        z = [np.dot(self.x_train[i].decrypt(), theta_plain) + b_plain for i in range(len(self.x_train))]
+        # calculate the hypothesis H0(x), predicted probability y = 1 (diabetic)
+        h = [self.sigmoid(z_i) for z_i in z]
 
-        # Calculate predictions
-        z = np.dot(x_test, theta_plain) + b_plain
+        cost = 0.0
+        for i in range(self.m):
+            y_i = self.y_train[i].decrypt()[0] 
+            h_i = h[i]
+            # compute cost
+            cost += -y_i * np.log(h_i) - (1 - y_i) * np.log(1 - h_i)
+        cost = cost * (1 / self.m)
+
+        ### back propagation ###
+        self.gradient = ts.ckks_vector(self.context, [0.0] * self.n)
+        self.gradient_b = ts.ckks_vector(self.context, [0.0])
+
+        for i in range(self.m):
+            error = h[i] - self.y_train[i].decrypt()[0] 
+            error_vector = [error] * self.n  
+            self.gradient = self.gradient + self.x_train[i].mul(error_vector)
+            self.gradient_b = self.gradient_b + ts.ckks_vector(self.context, [error])
+        self.gradient = self.gradient * (1/self.m)
+        self.gradient_b = self.gradient_b * (1/self.m)
+
+        return cost
+    
+
+    def grad_descent(self):
+        """Perform gradient descent by updating the weights and bias
+        after each iteration by the gradients computed in the cost
+        function. Plot the cost value vs iteration number to ensure the 
+        model is learning and cost is decreasing. Printing included for
+        development testing."""
+
+        costs = []
+        cost_list2 = []
+        index = []
+
+        for i in range(self.iterations):
+            cost = self.cost()
+            costs.append(cost)
+
+            # update parameters
+            self.theta -= self.alpha * self.gradient
+            self.b -= self.alpha * self.gradient_b
+
+            if i % 1 == 0:
+                cost_list2.append(cost)
+                index.append(i)
+                print(f"Cost after iteration {i}: {cost}")
+
+        # plots
+        plt.plot(index, cost_list2)
+        plt.title("Cost-Iteration Relation")
+        plt.xlabel("Number of iterations")
+        plt.ylabel("Cost")
+        plt.show()
+
+
+    def get_predictions(self):
+        """Decrypt the weights and bias and compute the predicted 
+        values using test values and sigmoid function"""
+
+        theta_plain = self.theta.decrypt()
+        b_plain = self.b.decrypt()[0]
+
+        # calculate predictions using polynomial approximation
+        z = [np.dot(self.x_test[i].decrypt(), theta_plain) + b_plain for i in range(len(self.x_test))]
+        z = np.array(z)  
         h = self.sigmoid(z)
-        predicted_y = (h >= 0.5).astype(int)
 
-        # Encrypt the predictions for privacy-preserving evaluation
-        encrypted_predicted_y = [ts.ckks_vector(self.context, [y]) for y in predicted_y]
+        print(f"z: {z[:9]}")  
+        print(f"h: {h[:9]}")  
+
+        predicted_y = (h >= 0.5).astype(int)
+        print(f"predicted_y: {predicted_y[:9]}") 
+        encrypted_predicted_y = [ts.ckks_vector(self.context, [float(y)]) for y in predicted_y]
+        
         return encrypted_predicted_y
 
-    def get_evaluation(self, encrypted_predicted_y, y_test):
-        # Decrypt predicted values for evaluation
-        predicted_y = np.array([y.decrypt() for y in encrypted_predicted_y])
 
-        # Decrypt y_test for evaluation
-        y_test_plain = y_test.decrypt()
+    def get_evaluation(self, encrypted_predicted_y):
+        """Evaluate the accuracy and error rate of the model using
+        the predicted y values from the trained model and the ground
+        truth values from the test set"""
 
-        # Calculate evaluation metrics
+        predicted_y = np.array([float(y.decrypt()[0]) for y in encrypted_predicted_y])
+        y_test_plain = np.array([float(y.decrypt()[0]) for y in self.y_test])
+        
+        # check values are 0 or 1
+        predicted_y = (predicted_y >= 0.5).astype(int)
+        y_test_plain = (y_test_plain >= 0.5).astype(int)
+        print(f"predicted_y: {predicted_y[:9]}")  
+        print(f"Y_test: {y_test_plain[:9]}")
+        
         accuracy = np.mean(y_test_plain == predicted_y)
         error_rate = np.mean(y_test_plain != predicted_y)
 
@@ -128,53 +152,23 @@ class EncryptedLogRegression:
         print("Error rate:", error_rate)
 
         return accuracy, error_rate
+    
+def sigmoid(z):
+    """define sigmoid function for Chebyshev approximation in 
+    update sigmoid function"""
+    return 1 / (1 + np.exp(-z))
 
+def plot_sigmoid_approximation():
+    """Plot both the Chebychev polynomial approximation
+    and original sigmoid function to ensure approzimation is accurate."""
 
-# def main():
-    # get data
-    # data = prep.preprocess_data()
-    # x_train = data[0]
-    # y_train = data[1]
-    # x_test = data[2]
-    # y_test = data[3]
+    z_values = np.linspace(-6, 6, 1000)
+    actual_sigmoid = 1 / (1 + np.exp(-z_values))
+    cheb = Chebyshev.fit(z_values, actual_sigmoid, 3)
+    approx_sigmoid = cheb(z_values)
 
-    # # CKKS tenseal parameters
-    # poly_mod_degree = 32768
-    # deg_of_optimization = -1
-    # # coeff_mod_bit_sizes = [40, 21, 21, 21, 21, 21, 21, 40]
-    # coeff_mod_bit_sizes = [60, 40, 60]
-    # # create a tenseal context
-    # context = ts.context(ts.SCHEME_TYPE.CKKS, poly_mod_degree,
-    #                      deg_of_optimization, coeff_mod_bit_sizes)
-    # context.global_scale = 2 ** 21
-    # context.generate_galois_keys()
-
-    # # encrypt training data using ckks (need tolist() not numpy so compatible with tenseal)
-    # encrypted_x_train = [ts.ckks_vector(context, x.tolist()) for x in x_train]
-    # encrypted_y_train = [ts.ckks_vector(context, [y]) for y in y_train.tolist()]
-
-
-    # # Load encrypted data from file
-    # import pickle
-    # with open('encrypted_data.pkl', 'rb') as f:
-    #     encrypted_data = pickle.load(f)
-
-    # x_train_encrypted = encrypted_data['x_train']
-    # y_train_encrypted = encrypted_data['y_train']
-    # x_test_encrypted = encrypted_data['x_test']
-    # y_test_encrypted = encrypted_data['y_test']
-    # # #initialize model
-    # model = EncryptedLogRegression(context, x_train_encrypted, y_train_encrypted)
-
-    # # train model
-    # model.grad_descent()
-    # print("Model training finished!")
-
-    # # #get plaintext predictions
-    # y_predicted = model.get_predictions(x_test)
-
-    # # #get plaintext accuracy
-    # model.get_evaluation(y_predicted, y_test)
-
-
-# main()
+    plt.plot(z_values, actual_sigmoid, label='Actual Sigmoid')
+    plt.plot(z_values, approx_sigmoid, label='Chebyshev Approximation', linestyle='--')
+    plt.legend()
+    plt.title('Sigmoid vs. Chebyshev Polynomial Approx')
+    plt.show()

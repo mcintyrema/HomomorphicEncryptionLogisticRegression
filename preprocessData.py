@@ -7,8 +7,8 @@ def preprocess_data():
     patient_data.columns = medical_predictor_labels
 
     #extract patient dataset feature columns without headings
-    X = patient_data.iloc[1:, 1:-1].values.astype(float)  # features (excluding PatientID and Diabetic)
-    y = patient_data.iloc[1:, -1].values.astype(float)  # labels (Diabetic)
+    X = patient_data.iloc[1:, 1:-1].values.astype(float)  # features (excluding PatientID)
+    y = patient_data.iloc[1:, -1].values.astype(float)  # labels (diabetic)
 
     # append array of ones to temp with length = to amt of x rows and 1 col
     oneVector = np.ones((X.shape[0], 1))
@@ -17,7 +17,6 @@ def preprocess_data():
 
     # min-max Normalization
     X[:, 1:] = (X[:, 1:] - np.min(X[:, 1:], axis=0)) / (np.max(X[:, 1:], axis=0) - np.min(X[:, 1:], axis=0))
-
 
     y = np.array(y) # (15000)
 
@@ -47,7 +46,6 @@ def preprocess_data():
 
 def main():
     preprocess_data()
-
 
 if __name__ == '__main__':
     main()

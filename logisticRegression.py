@@ -95,7 +95,7 @@ class LogisticRegression:
 
         print("Accuracy: ", accuracy)
         print("Error rate:", error_rate)
-        # return accuracy, error_rate
+        return accuracy, error_rate
 
 
 def main():
